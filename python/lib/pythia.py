@@ -83,3 +83,36 @@ class IntRandomGenerator(RandomGenerator):
 
   def generate(self):
     return random.randint(self.lowerbound, self.upperbound)
+
+'''Test suite'''
+class TestSuite:
+  def __init__(self, predefined, inputfile):
+    self.predefined = predefined
+    self.inputfile = inputfile
+
+  def check(self, data):
+    try:
+      answer = self.studentCode(data)
+    except Exception as e:
+      return 'exception:{}'.format(e)
+    res = self.moreCheck(answer, data)
+    if res != 'passed':
+      return res
+    return 'checked:{}'.format(answer)
+
+  def studentCode(self, data):
+    return None
+
+  def moreCheck(self, answer, data):
+    return 'passed'
+
+  def parseTestData(self, data):
+    return tuple(data)
+
+  def run(self, resultfile):
+    with open(resultfile, 'w', encoding='utf-8') as file:
+      # Run predefined tests
+      for data in self.predefined:
+        res = self.check(self.parseTestData(data))
+        file.write('{}\n'.format(res))
+    pass
