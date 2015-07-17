@@ -19,14 +19,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+import csv
 import os
+import random
 import re
 
 '''Fill skeleton files containing placeholders with specified values'''
 def fillSkeletons(src, dest, fields):
   for (root, dirs, files) in os.walk(src):
     dirdest = dest + root[len(src):]
-    # Creates destination directory if not existing yet
+    # Create destination directory if not existing yet
     if not os.path.exists(dirdest):
       os.makedirs(dirdest)
     # Handle each file in the src directory
@@ -45,3 +47,39 @@ def fillSkeletons(src, dest, fields):
       # Create the new file
       with open(filedest, 'w', encoding='utf-8') as file:
         file.write(content)
+
+'''Generate input data for random tests'''
+def generateRandomTestData(dest, filename, config):
+  # Create destination directory if not existing yet
+  if not os.path.exists(dest):
+    os.makedirs(dest)
+  with open('{}/{}'.format(dest, filename), 'w', encoding='utf-8') as file:
+    writer = csv.writer(file, delimiter=';', quotechar='"')
+    generator = ArrayGenerator([RandomGenerator.build(descr) for descr in config['args']])
+    for i in range(config['n']):
+      writer.writerow(generator.generate())
+
+class RandomGenerator:
+  def generate(self):
+    return None
+
+  def build(description):
+    m = re.match('^int\((-{0,1}[1-9][0-9]*),(-{0,1}[1-9][0-9]*)\)', description)
+    if not m is None:
+      return IntRandomGenerator(int(m.group(1)), int(m.group(2)))
+    return RandomGenerator()
+
+class ArrayGenerator(RandomGenerator):
+  def __init__(self, generators):
+    self.generators = generators
+
+  def generate(self):
+    return [g.generate() for g in self.generators]
+
+class IntRandomGenerator(RandomGenerator):
+  def __init__(self, lowerbound, upperbound):
+    self.lowerbound = lowerbound
+    self.upperbound = upperbound
+
+  def generate(self):
+    return random.randint(self.lowerbound, self.upperbound)
