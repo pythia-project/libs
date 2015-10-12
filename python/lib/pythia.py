@@ -64,9 +64,9 @@ def fillSkeletons(src, dest, fields):
         # Replace each placeholder with the specified value
         for field, value in fields.items():
             regex = re.compile('@([^@]*)@{}@([^@]*)@'.format(field))
-        for prefix, postfix in set(regex.findall(content)):
-            rep = '\n'.join([prefix + v + postfix for v in value.splitlines()])
-            content = content.replace('@{}@{}@{}@'.format(prefix, field, postfix), rep)
+            for prefix, postfix in set(regex.findall(content)):
+                rep = '\n'.join([prefix + v + postfix for v in value.splitlines()])
+                content = content.replace('@{}@{}@{}@'.format(prefix, field, postfix), rep)
         # Create the new file
         with open(filedest, 'w', encoding='utf-8') as file:
             file.write(content)
