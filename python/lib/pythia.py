@@ -104,8 +104,17 @@ class RandomGenerator:
         # int(a,b)
         intpattern = '-{0,1}[1-9][0-9]*'
         m = re.match('^int\(({0}),({0})\)'.format(intpattern), description)
-        if not m is None:
+        if m is not None:
             return IntRandomGenerator(int(m.group(1)), int(m.group(2)))
+        # float(a,b)
+        floatpattern = '-{0,1}[1-9][0-9]*(?:\.[0-9]*[1-9]){0,1}'
+        m = re.match('^float\(({0}),({0})\)'.format(floatpattern), description)
+        if m is not None:
+            return FloatRandomGenerator(float(m.group(1)), float(m.group(2)))
+        # str(a,b)
+        m = re.match('^str\(({0}),({0})\)'.format(intpattern), description)
+        if m is not None:
+            return StringRandomGenerator(int(m.group(1)), int(m.group(2)))
         # default case
         return RandomGenerator()
 
@@ -127,6 +136,31 @@ class IntRandomGenerator(RandomGenerator):
 
     def generate(self):
         return random.randint(self.__lowerbound, self.__upperbound)
+
+
+class FloatRandomGenerator(RandomGenerator):
+    '''Class to generate a random float comprised between two bounds'''
+    def __init__(self, lowerbound, upperbound):
+        self.__lowerbound = lowerbound
+        self.__upperbound = upperbound
+
+    def generate(self):
+        return random.uniform(self.__lowerbound, self.__upperbound)
+
+
+class StringRandomGenerator(RandomGenerator):
+    '''Class to generate a random string with a specified number of characters'''
+    def __init__(self, minchars, maxchars):
+        self.__minchars = minchars
+        self.__maxchars = maxchars
+
+    def generate(self):
+        letters = 'abcdefghijklmnopqrst0123456789'
+        n = random.randint(self.__minchars, self.__maxchars)
+        result = ''
+        for i in range(n):
+            result += letters[random.randint(0, len(letters) - 1)]
+        return result
 
 
 class NoAnswerException(Exception):
@@ -193,6 +227,7 @@ class TestSuite:
 
     def parseTestData(self, data):
         return tuple(data)
+
     def run(self, dest, filename):
         # Create the results file
         with open('{}/{}'.format(dest, filename), 'w', encoding='utf-8') as result:
@@ -218,11 +253,14 @@ class FeedbackSuite:
         try:
             # Compare student and teacher answers
             expected = self.teacherCode(data)
-            if str(expected) == actual:
+            if self.compare(expected, actual):
                 check = True
         except Exception as e:
             expected = None
         return (check, expected)
+
+    def compare(self, expected, actual):
+        return str(expected) == actual
 
     def teacherCode(self, data):
         return None
@@ -271,7 +309,7 @@ class FeedbackSuite:
                             elif 'example' not in feedback:
                                 verdict = False
                                 feedback['example'] = {'input': input, 'expected': str(expected), 'actual': tokens[1]}
-                                if total < len(self.__config):
+                                if total < len(self.__config) and 'feedback' in self.__config[total]:
                                     message = self.__config[total]['feedback']
                                     if tokens[1] in message:
                                         feedback['message'] = message[tokens[1]]
