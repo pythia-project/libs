@@ -333,6 +333,8 @@ class FeedbackSuite:
                                     message = self.__config[total]['feedback']
                                     if tokens[1] in message:
                                         feedback['message'] = message[tokens[1]]
+                                    elif '*' in message:
+                                        feedback['message'] = message['*']
                         # An exception occured
                         elif tokens[0] == 'exception':
                             verdict = False
