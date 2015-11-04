@@ -107,6 +107,9 @@ class RandomGenerator:
         m = re.match('^int\(({0}),({0})\)$'.format(intpattern), description)
         if m is not None:
             return IntRandomGenerator(int(m.group(1)), int(m.group(2)))
+        # bool
+        if 'bool' == description:
+            return BoolRandomGenerator()
         # float(a,b)
         m = re.match('^float\(({0}),({0})\)$'.format(floatpattern), description)
         if m is not None:
@@ -140,6 +143,15 @@ class IntRandomGenerator(RandomGenerator):
 
     def generate(self):
         return random.randint(self.__lowerbound, self.__upperbound)
+
+
+class BoolRandomGenerator(RandomGenerator):
+    '''Class to generate a random boolean value'''
+    def __init__(self):
+        pass
+
+    def generate(self):
+        return random.randint(0, 1) == 0
 
 
 class FloatRandomGenerator(RandomGenerator):
