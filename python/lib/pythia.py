@@ -118,6 +118,10 @@ class RandomGenerator:
         m = re.match('^str\(({0}),({0})\)$'.format(intpattern), description)
         if m is not None:
             return StringRandomGenerator(int(m.group(1)), int(m.group(2)))
+        # enum(list)
+        m = re.match('^enum\((.+)\)$', description)
+        if m is not None:
+            return EnumRandomGenerator(m.group(1).split(','))
         # set(a,b)[config]
         m = re.match('^set\(({0}),({0})\)\[(.+)\]$'.format(intpattern), description)
         if m is not None:
@@ -177,6 +181,15 @@ class StringRandomGenerator(RandomGenerator):
         for i in range(n):
             result += letters[random.randint(0, len(letters) - 1)]
         return result
+
+
+class EnumRandomGenerator(RandomGenerator):
+    '''Class to generate a random value from an enumeration'''
+    def __init__(self, values):
+        self.__values = values
+
+    def generate(self):
+        return self.__values[random.randint(0, len(self.__values) - 1)]
 
 
 class SetRandomGenerator(RandomGenerator):
