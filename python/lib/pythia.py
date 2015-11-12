@@ -73,6 +73,21 @@ def fillSkeletons(src, dest, fields):
         os.chmod(filedest, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH)
 
 
+class Preprocessor:
+    '''Class to preprocess student's answers'''
+    def __init__(self, fields):
+        self.__fields = fields
+
+    def run(self, dest, filename):
+        result = self.preprocess(self.__fields)
+        if result != None:
+            with open('{}/{}'.format(dest, filename), 'w', encoding='utf-8') as file:
+                file.write(result)
+
+    def preprocess(self, fields):
+        return None
+
+
 def generateTestData(dest, filename, config):
     '''Generate input data for unit tests'''
     # Open destination file
