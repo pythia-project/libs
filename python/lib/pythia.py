@@ -258,6 +258,26 @@ class BadTypeException(Exception):
         return self.__expectedtype
 
 
+class WrongParameterNumberException(Exception):
+    '''Exception representing the case where the number of parameters of a function is wrong'''
+    def __init__(self, name, actualnumber, expectednumber):
+        self.__name = name
+        self.__actualnumber = actualnumber
+        self.__expectednumber = expectednumber
+
+    @property
+    def name(self):
+        return self.__name
+
+    @property
+    def actualnumber(self):
+        return self.__actualnumber
+
+    @property
+    def expectednumber(self):
+        return self.__expectednumber
+
+
 class TestSuite:
     '''Basic test suite'''
     def __init__(self, inputfile):
@@ -272,6 +292,8 @@ class TestSuite:
             return 'exception:undeclared:{}'.format(e.name)
         except BadTypeException as e:
             return 'exception:badtype:{}:{}:{}'.format(e.name, e.actualtype, e.expectedtype)
+        except WrongParameterNumberException as e:
+            return 'exception:wrongparameterexception:{}:{}:{}'.format(e.name, e.actualnumber, e.expectednumber)
         except Exception as e:
             return 'exception:{}'.format(e)
         res = self.moreCheck(answer, data)
@@ -385,6 +407,8 @@ class FeedbackSuite:
                                 feedback['message'] += ': Missing variable <code>{}</code>'.format(tokens[2])
                             elif tokens[1] == 'badtype':
                                 feedback['message'] += ': Bad type for variable <code>{}</code> : found <code>{}</code>, but <code>{}</code> expected'.format(tokens[2], clean(tokens[3]), clean(tokens[4]))
+                            elif tokens[1] == 'wrongparameterexception':
+                                feedback['message'] += ': Wrong number of parameters for function <code>{}</code> : found {}, but {} required'.format(tokens[2], tokens[3], tokens[4])
                             else:
                                 feedback['message'] += ': {}'.format(tokens[1])
                         # Unexpected error
