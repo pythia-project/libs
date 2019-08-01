@@ -1,4 +1,4 @@
-// Pythia library for unit testing-based tasks
+// Pythia utilities for unit testing-based tasks
 // Author: Sébastien Combéfis <sebastien@combefis.be>
 //
 // Copyright (C) 2019, Computer Science and IT in Education ASBL
