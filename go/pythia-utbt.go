@@ -44,14 +44,6 @@ type TaskInput struct {
 	Fields map[string]string `json:"fields"`
 }
 
-/*type SpecConfig struct {
-	Name string `json:"name"`
-	Args []struct {
-		Name string `json:"name"`
-		Type string `json:"type"`
-	} `json:"args"`
-}*/
-
 // TestConfig contains the configuration of the tests for a task.
 type TestConfig struct {
 	Predefined []struct {
@@ -128,27 +120,22 @@ func main() {
 	os.Exit(0)
 }
 
-func createDir(paths ...string) error {
-	for _, path := range paths {
-		if err := os.MkdirAll(path, 0777); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Preprocess
 
 func preprocess() error {
 	// Setup working directory and create directories for input/output data for unit tests.
 	os.RemoveAll(workDir)
-	if err := createDir(workDir, workDir+"/input", workDir+"/output", studentDir); err != nil {
+	if err := createDir(0755, workDir, workDir+"/input", studentDir); err != nil {
+		return err
+	}
+	if err := createDir(0777, workDir+"/output"); err != nil {
 		return err
 	}
 
 	// Read and parse input data.
 	input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	input = strings.TrimRight(input, "\u0000")
 
 	var data TaskInput
 	if err := json.Unmarshal([]byte(input), &data); err != nil {
@@ -168,6 +155,18 @@ func preprocess() error {
 	return nil
 }
 
+func createDir(perm os.FileMode, paths ...string) error {
+	for _, path := range paths {
+		if err := os.MkdirAll(path, perm); err != nil {
+			return err
+		}
+		if err := os.Chmod(path, perm); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func fillSkeletonFiles(src string, dst string, fields map[string]string) error {
 	// Check each file of the specified source directory.
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
@@ -184,7 +183,7 @@ func fillSkeletonFiles(src string, dst string, fields map[string]string) error {
 			dstFile := fmt.Sprintf("%s/%s", dst, dstDir)
 
 			// Create destination directories.
-			if err := createDir(filepath.Dir(dstFile)); err != nil {
+			if err := createDir(0755, filepath.Dir(dstFile)); err != nil {
 				return err
 			}
 
@@ -211,6 +210,11 @@ func fillSkeletonFiles(src string, dst string, fields map[string]string) error {
 
 			// Write the destination file.
 			if err := ioutil.WriteFile(dstFile, []byte(fileContent), 0774); err != nil {
+				return err
+			}
+
+			// Set file permission.
+			if err := os.Chmod(dstFile, 0644); err != nil {
 				return err
 			}
 		}
@@ -389,16 +393,16 @@ func feedback() error {
 
 	results, err := readLines(workDir + "/output/data.res")
 	if err != nil {
-		panic(err)
+		return err
 	}
 	solutions, err := readLines(workDir + "/output/solution.res")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	file, err := os.Open(workDir + "/input/data.csv")
 	if err != nil {
-		panic(err)
+		return err
 	}
 	reader := csv.NewReader(file)
 	reader.Comma = ';'
@@ -410,7 +414,7 @@ func feedback() error {
 			break
 		}
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		tokens := strings.Split(results[i], ":")
@@ -445,7 +449,7 @@ func feedback() error {
 	grading.Feedback = &feedback
 	result, err := json.Marshal(grading)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	fmt.Println(string(result))
 
@@ -470,7 +474,7 @@ func executeSolution() error {
 
 	// Prepare working directory for solution execution.
 	os.RemoveAll(teacherDir)
-	if err := createDir(teacherDir); err != nil {
+	if err := createDir(0700, teacherDir); err != nil {
 		return err
 	}
 
@@ -496,10 +500,11 @@ func readSolution(solution *map[string]string) error {
 }
 
 func readLines(path string) (lines []string, err error) {
-	if content, err := ioutil.ReadFile(path); err == nil {
-		lines = strings.Split(strings.TrimSpace(string(content)), "\n")
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
 	}
-	return lines, err
+	return strings.Split(strings.TrimSpace(string(content)), "\n"), nil
 }
 
 func printGrading(grading Grading) error {
