@@ -23,29 +23,36 @@ import (
 	"bufio"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/pythia-project/libs/go/pythia-utbt/generators"
 )
 
-type TaskData struct {
+// TaskInput contains the inputs of the learner for the specified task id.
+type TaskInput struct {
 	Tid    string            `json:"tid"`
 	Fields map[string]string `json:"fields"`
 }
 
-type SpecConfig struct {
+/*type SpecConfig struct {
 	Name string `json:"name"`
 	Args []struct {
 		Name string `json:"name"`
 		Type string `json:"type"`
 	} `json:"args"`
-}
+}*/
 
+// TestConfig contains the configuration of the tests for a task.
 type TestConfig struct {
 	Predefined []struct {
 		Data     string            `json:"data"`
@@ -54,20 +61,23 @@ type TestConfig struct {
 	Random struct {
 		N    int      `json:"n"`
 		Args []string `json:"args"`
-	} `json:"random"`
+	} `json:"random,omitempty"`
 }
 
+// Example contains a counterexample as a witness for a failed test.
 type Example struct {
 	Input    string `json:"input"`
 	Expected string `json:"expected"`
 	Actual   string `json:"actual"`
 }
 
+// Stats contains statistical information about the tests execution.
 type Stats struct {
 	Succeeded int `json:"succeeded"`
 	Total     int `json:"total"`
 }
 
+// Feedback contains feedback information about the tests execution.
 type Feedback struct {
 	Message string   `json:"message,omitempty"`
 	Example *Example `json:"example,omitempty"`
@@ -75,13 +85,25 @@ type Feedback struct {
 	Score   float32  `json:"score,omitempty"`
 }
 
+// Grading contains the result of the grading of the specified task id.
 type Grading struct {
 	Tid      string    `json:"tid"`
 	Status   string    `json:"status"`
 	Feedback *Feedback `json:"feedback,omitempty"`
 }
 
-var fcts = map[string]func(){
+const (
+	skeletonDir = "/task/skeleton"
+
+	workDir    = "/tmp/work"
+	studentDir = workDir + "/student"
+	teacherDir = workDir + "/teacher"
+
+	intPattern   = `-{0,1}[1-9][0-9]*`
+	floatPattern = `-{0,1}[1-9][0-9]*(?:\.[0-9]*[1-9]){0,1}`
+)
+
+var fcts = map[string]func() error{
 	"preprocess": preprocess,
 	"generate":   generate,
 	"execute":    execute,
@@ -90,195 +112,272 @@ var fcts = map[string]func(){
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Subcommand is required (preprocess, generate, execute or feedback).")
-		os.Exit(1)
+		log.Fatal("Subcommand is required (preprocess, generate, execute or feedback).")
 	}
-	if handle, ok := fcts[os.Args[1]]; ok {
-		handle()
+
+	// Find the function to execute for given subcommand.
+	handler, ok := fcts[os.Args[1]]
+	if !ok {
+		log.Fatalf("Unknown subcommand: %s.", os.Args[1])
 	}
+
+	// Execute the function associated to the subcommand.
+	if err := handler(); err != nil {
+		log.Fatalf("Error while executing %s: %s.", os.Args[1], err)
+	}
+	os.Exit(0)
 }
 
-func preprocess() {
-	// Setup working directory
-	dirName := "/tmp/work"
-	if _, err := os.Stat(dirName); os.IsNotExist(err) {
-		if err := os.MkdirAll(dirName, 0777); err != nil {
-			panic(err)
+func createDir(paths ...string) error {
+	for _, path := range paths {
+		if err := os.MkdirAll(path, 0777); err != nil {
+			return err
 		}
 	}
-
-	// Create directories for input and output data for unit tests
-	if err := os.MkdirAll(dirName+"/input", 0777); err != nil {
-		panic(err)
-	}
-	if err := os.MkdirAll(dirName+"/output", 0777); err != nil {
-		panic(err)
-	}
-
-	// Read input data
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-
-	var data TaskData
-	if err := json.Unmarshal([]byte(input), &data); err != nil {
-		panic(err)
-	}
-
-	// Fill skeleton files
-	fillSkeletonFiles("/tmp/work", data.Fields)
-
-	// Save task id
-	if err := ioutil.WriteFile(dirName+"/tid", []byte(data.Tid), 0444); err != nil {
-		panic(err)
-	}
+	return nil
 }
 
-func fillSkeletonFiles(dest string, fields map[string]string) {
-	if err := filepath.Walk("/task/skeleton",
-		func(path string, info os.FileInfo, err error) error {
+////////////////////////////////////////////////////////////////////////////////
+// Preprocess
+
+func preprocess() error {
+	// Setup working directory and create directories for input/output data for unit tests.
+	os.RemoveAll(workDir)
+	if err := createDir(workDir, workDir+"/input", workDir+"/output", studentDir); err != nil {
+		return err
+	}
+
+	// Read and parse input data.
+	input, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+
+	var data TaskInput
+	if err := json.Unmarshal([]byte(input), &data); err != nil {
+		return err
+	}
+
+	// Fill skeleton files with learner's inputs.
+	if err := fillSkeletonFiles(skeletonDir, studentDir, data.Fields); err != nil {
+		return err
+	}
+
+	// Save task id to file.
+	if err := saveTaskId(data.Tid); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func fillSkeletonFiles(src string, dst string, fields map[string]string) error {
+	// Check each file of the specified source directory.
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !info.Mode().IsDir() {
+			// Get the destination file path.
+			dstDir, err := filepath.Rel(src, path)
 			if err != nil {
 				return err
 			}
-			if !info.Mode().IsDir() {
-				destDir := dest + filepath.Dir(path)[14:]
-				destFile := destDir + "/" + filepath.Base(path)
+			dstFile := fmt.Sprintf("%s/%s", dst, dstDir)
 
-				if err := os.MkdirAll(destDir, 0777); err != nil {
-					panic(err)
-				}
-				content, err := ioutil.ReadFile(path)
-				if err != nil {
-					panic(err)
-				}
+			// Create destination directories.
+			if err := createDir(filepath.Dir(dstFile)); err != nil {
+				return err
+			}
 
-				for key, value := range fields {
-					regex, _ := regexp.Compile("@([^@]*)@" + key + "@([^@]*)@")
-					matches := regex.FindAllStringSubmatch(string(content), -1)
-					for _, match := range matches {
-						lines := strings.Split(value, "\n")
-						rep := ""
-						for _, line := range lines {
-							rep += match[1] + line + match[2] + "\n"
-						}
-						content = []byte(strings.ReplaceAll(string(content), "@"+match[1]+"@"+key+"@"+match[2]+"@", rep))
+			// Read the source file.
+			content, err := ioutil.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			fileContent := string(content)
+
+			// Find placeholders and replace them with corresponding input.
+			for key, value := range fields {
+				regex, _ := regexp.Compile("@([^@]*)@" + key + "@([^@]*)@")
+				matches := regex.FindAllStringSubmatch(fileContent, -1)
+				for _, match := range matches {
+					lines := strings.Split(value, "\n")
+					var rep strings.Builder
+					for _, line := range lines {
+						rep.WriteString(match[1] + line + match[2] + "\n")
 					}
-				}
-
-				if err := ioutil.WriteFile(destFile, content, 0774); err != nil {
-					panic(err)
+					fileContent = strings.ReplaceAll(fileContent, "@"+match[1]+"@"+key+"@"+match[2]+"@", rep.String())
 				}
 			}
-			return nil
-		},
-	); err != nil {
-		panic(err)
-	}
+
+			// Write the destination file.
+			if err := ioutil.WriteFile(dstFile, []byte(fileContent), 0774); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
-func generate() {
-	// Read test configuration
-	content, err := ioutil.ReadFile("/task/config/test.json")
-	if err != nil {
-		panic(err)
-	}
+func saveTaskId(tid string) error {
+	return ioutil.WriteFile(workDir+"/tid", []byte(tid), 0444)
+}
 
+////////////////////////////////////////////////////////////////////////////////
+// Generate
+
+func generate() error {
+	var testInputFile = workDir + "/input/data.csv"
+
+	// Read and parse test configuration.
 	var config TestConfig
-	if err := json.Unmarshal(content, &config); err != nil {
-		panic(err)
+	if err := readTestConfig("/task/config/test.json", &config); err != nil {
+		return err
 	}
 
-	// Create test data file
-	file, err := os.Create("/tmp/work/input/data.csv")
+	// Create test inputs CSV file.
+	file, err := os.Create(testInputFile)
 	if err != nil {
-		panic(err)
+		return err
 	}
+	defer os.Chmod(testInputFile, 0444)
 	defer file.Close()
 
-	if err := os.Chmod("/tmp/work/input/data.csv", 0774); err != nil {
-		panic(err)
-	}
 	writer := csv.NewWriter(file)
 	writer.Comma = ';'
 	defer writer.Flush()
 
-	// Generate test data
+	// Generate predefined test inputs.
 	if config.Predefined != nil {
 		for _, data := range config.Predefined {
-			inputs := strings.Split(data.Data[1:len(data.Data)-1], ",")
-			for i := range inputs {
-				inputs[i] = strings.TrimSpace(inputs[i])
-			}
-			writer.Write(inputs)
+			writer.Write(parseTestInputs(data.Data))
 		}
 	}
-	/*
-	       # Create an array of generators as specified by configuration
-	       # and write random tests to the specified file if any
-	       if 'random' in config:
-	           random = config['random']
-	           generator = ArrayGenerator([RandomGenerator.build(descr) for descr in random['args']])
-	           for i in range(random['n']):
-	               writer.writerow(generator.generate())
-	   os.chmod(filedest, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH)
 
-	*/
-}
-
-func execute() {
-	// Execute the code from the learner
-	cmd := exec.Command(os.Args[2], os.Args[3:]...)
-	if err := cmd.Run(); err != nil {
-		panic(err)
+	// Generate random test inputs.
+	if config.Random.N > 0 {
+		generators := buildGenerators(config.Random.Args...)
+		for i := 0; i < config.Random.N; i++ {
+			writer.Write(generateTestInputs(generators))
+		}
 	}
+
+	return nil
 }
 
-func feedback() {
-	var grading Grading
-	var content []byte
-	var err error
-
-	// Retrieve task id
-	content, err = ioutil.ReadFile("/tmp/work/tid")
+func readTestConfig(path string, config *TestConfig) error {
+	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	grading.Tid = string(content)
 
-	// Check if there are any standard error
-	content, err = ioutil.ReadFile("/tmp/work/output/out.err")
+	return json.Unmarshal(content, &config)
+}
+
+func parseTestInputs(str string) []string {
+	inputs := strings.Split(str[1:len(str)-1], ",")
+	for i := range inputs {
+		inputs[i] = strings.TrimSpace(inputs[i])
+	}
+
+	return inputs
+}
+
+func generateTestInputs(gens []generators.RandomGenerator) []string {
+	inputs := make([]string, len(gens))
+	for i, g := range gens {
+		inputs[i] = g.Generate()
+	}
+
+	return inputs
+}
+
+func buildGenerator(desc string) generators.RandomGenerator {
+	var regex *regexp.Regexp
+
+	// int(min,max)
+	regex, _ = regexp.Compile(fmt.Sprintf(`^int\((%[1]s),(%[1]s)\)$`, intPattern))
+	if matches := regex.FindStringSubmatch(desc); matches != nil {
+		min, _ := strconv.ParseInt(matches[1], 10, 64)
+		max, _ := strconv.ParseInt(matches[2], 10, 64)
+		return generators.IntRandomGenerator{min, max}
+	}
+
+	// bool
+	if desc == "bool" {
+		return generators.BoolRandomGenerator{}
+	}
+
+	// float(min,max)
+	regex, _ = regexp.Compile(fmt.Sprintf(`^float\((%[1]s),(%[1]s)\)$`, floatPattern))
+	if matches := regex.FindStringSubmatch(desc); matches != nil {
+		min, _ := strconv.ParseFloat(matches[1], 64)
+		max, _ := strconv.ParseFloat(matches[2], 64)
+		return generators.FloatRandomGenerator{min, max}
+	}
+
+	return nil
+}
+
+func buildGenerators(descs ...string) []generators.RandomGenerator {
+	generators := make([]generators.RandomGenerator, len(descs))
+	for i, desc := range descs {
+		generators[i] = buildGenerator(desc)
+	}
+
+	return generators
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Execute
+
+func execute() error {
+	if len(os.Args) < 3 {
+		return errors.New("Command to execute is missing.")
+	}
+
+	// Execute the code from the learner.
+	if err := executeCommand(os.Args[2], os.Args[3:]...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func executeCommand(command string, args ...string) error {
+	cmd := exec.Command(command, args...)
+	return cmd.Run()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Feedback
+
+func feedback() error {
+	var grading Grading
+
+	// Load task id from file.
+	err := loadTaskId(&grading.Tid)
+	if err != nil {
+		return err
+	}
+
+	// Check and handle standard error, if there is any.
+	content, err := ioutil.ReadFile(workDir + "/output/out.err")
 	if err == nil {
 		grading.Status = "failed"
 		grading.Feedback = &Feedback{
 			Message: string(content),
 		}
-		result, err := json.Marshal(grading)
-		if err != nil {
-			panic(err)
+		if err := printGrading(grading); err != nil {
+			return err
 		}
-		fmt.Println(string(result))
-		os.Exit(0)
+		return nil
 	}
 
-	// Check if there are any standard output
+	// Check and handle standard output, if there is any.
 
-	// Read author solution
-	content, err = ioutil.ReadFile("/task/config/solution")
-	if err != nil {
-		panic(err)
-	}
-	solution := string(content)
-
-	// Fill skeleton files
-	solutionDir := "/tmp/work/solution"
-	if err := os.MkdirAll(solutionDir, 0777); err != nil {
-		panic(err)
-	}
-	fillSkeletonFiles(solutionDir, map[string]string{"f1": solution})
-
-	// Execute the code from the author
-	cmd := exec.Command(os.Args[2], os.Args[3:]...)
-	if err := cmd.Run(); err != nil {
-		panic(err)
+	// Generate the solution.
+	if err := executeSolution(); err != nil {
+		return err
 	}
 
 	// Generate the feedback
@@ -288,16 +387,16 @@ func feedback() {
 	stats.Total = 0
 	grading.Status = "success"
 
-	results, err := ReadLines("/tmp/work/output/data.res")
+	results, err := readLines(workDir + "/output/data.res")
 	if err != nil {
 		panic(err)
 	}
-	solutions, err := ReadLines("/tmp/work/output/solution.res")
+	solutions, err := readLines(workDir + "/output/solution.res")
 	if err != nil {
 		panic(err)
 	}
 
-	file, err := os.Open("/tmp/work/input/data.csv")
+	file, err := os.Open(workDir + "/input/data.csv")
 	if err != nil {
 		panic(err)
 	}
@@ -349,11 +448,65 @@ func feedback() {
 		panic(err)
 	}
 	fmt.Println(string(result))
+
+	return nil
 }
 
-func ReadLines(path string) (lines []string, err error) {
+func loadTaskId(tid *string) error {
+	content, err := ioutil.ReadFile(workDir + "/tid")
+	if err != nil {
+		return err
+	}
+	*tid = string(content)
+	return nil
+}
+
+func executeSolution() error {
+	// Read author solution.
+	var solution map[string]string
+	if err := readSolution(&solution); err != nil {
+		return err
+	}
+
+	// Prepare working directory for solution execution.
+	os.RemoveAll(teacherDir)
+	if err := createDir(teacherDir); err != nil {
+		return err
+	}
+
+	// Fill skeleton files with author solution.
+	if err := fillSkeletonFiles(skeletonDir, teacherDir, solution); err != nil {
+		return err
+	}
+
+	// Execute the code from the author.
+	if err := executeCommand(os.Args[2], os.Args[3:]...); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func readSolution(solution *map[string]string) error {
+	content, err := ioutil.ReadFile("/task/config/solution.json")
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(content, solution)
+}
+
+func readLines(path string) (lines []string, err error) {
 	if content, err := ioutil.ReadFile(path); err == nil {
 		lines = strings.Split(strings.TrimSpace(string(content)), "\n")
 	}
 	return lines, err
+}
+
+func printGrading(grading Grading) error {
+	result, err := json.Marshal(grading)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(result))
+	return nil
 }
