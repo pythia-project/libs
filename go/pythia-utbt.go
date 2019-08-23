@@ -32,7 +32,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/pythia-project/libs/go/pythia-utbt/generators"
@@ -90,9 +89,6 @@ const (
 	workDir    = "/tmp/work"
 	studentDir = workDir + "/student"
 	teacherDir = workDir + "/teacher"
-
-	intPattern   = `-{0,1}[1-9][0-9]*`
-	floatPattern = `-{0,1}[1-9][0-9]*(?:\.[0-9]*[1-9]){0,1}`
 )
 
 var fcts = map[string]func() error{
@@ -261,7 +257,7 @@ func generate() error {
 
 	// Generate random test inputs.
 	if config.Random.N > 0 {
-		generators := buildGenerators(config.Random.Args...)
+		generators := generators.BuildGenerators(config.Random.Args...)
 		for i := 0; i < config.Random.N; i++ {
 			writer.Write(generateTestInputs(generators))
 		}
@@ -295,42 +291,6 @@ func generateTestInputs(gens []generators.RandomGenerator) []string {
 	}
 
 	return inputs
-}
-
-func buildGenerator(desc string) generators.RandomGenerator {
-	var regex *regexp.Regexp
-
-	// int(min,max)
-	regex, _ = regexp.Compile(fmt.Sprintf(`^int\((%[1]s),(%[1]s)\)$`, intPattern))
-	if matches := regex.FindStringSubmatch(desc); matches != nil {
-		min, _ := strconv.ParseInt(matches[1], 10, 64)
-		max, _ := strconv.ParseInt(matches[2], 10, 64)
-		return generators.IntRandomGenerator{min, max}
-	}
-
-	// bool
-	if desc == "bool" {
-		return generators.BoolRandomGenerator{}
-	}
-
-	// float(min,max)
-	regex, _ = regexp.Compile(fmt.Sprintf(`^float\((%[1]s),(%[1]s)\)$`, floatPattern))
-	if matches := regex.FindStringSubmatch(desc); matches != nil {
-		min, _ := strconv.ParseFloat(matches[1], 64)
-		max, _ := strconv.ParseFloat(matches[2], 64)
-		return generators.FloatRandomGenerator{min, max}
-	}
-
-	return nil
-}
-
-func buildGenerators(descs ...string) []generators.RandomGenerator {
-	generators := make([]generators.RandomGenerator, len(descs))
-	for i, desc := range descs {
-		generators[i] = buildGenerator(desc)
-	}
-
-	return generators
 }
 
 ////////////////////////////////////////////////////////////////////////////////
