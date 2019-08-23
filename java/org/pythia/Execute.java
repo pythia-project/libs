@@ -19,14 +19,14 @@
 
 package org.pythia;
 
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.FileReader;
+import java.io.InputStreamReader;
 import java.io.IOException;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,6 +38,18 @@ import org.pythia.TestSuite;
 
 public class Execute
 {
+	private static String readAll (String path) throws IOException
+	{
+		BufferedReader reader = new BufferedReader (new InputStreamReader (new FileInputStream (path), "UTF-8"));
+		StringBuilder buff = new StringBuilder();
+		String line = null;
+		while ((line = reader.readLine()) != null)
+		{
+			buff.append(line);
+		}
+		return buff.toString();
+	}
+
 	public static void main (String[] args) throws ClassNotFoundException, IOException, NoSuchMethodException
 	{
 		if (args.length < 1 || ! Arrays.asList("student", "teacher").contains(args[0]))
@@ -46,13 +58,7 @@ public class Execute
 		}
 
 		// Read the specification of the function.
-		List<String> lines = Files.readAllLines(Paths.get("/task/config/spec.json"), StandardCharsets.UTF_8);
-		StringBuilder builder = new StringBuilder();
-		for (String line : lines)
-		{
-			builder.append(line);
-		}
-		JSONObject spec = new JSONObject(builder.toString());
+		JSONObject spec = new JSONObject (readAll ("/task/config/spec.json"));
 
 		// Import the code to execute.
 		Class<?> program = ClassLoader.getSystemClassLoader().loadClass ("Program");
@@ -111,13 +117,3 @@ public class Execute
 		runner.run ("/tmp/work/output", outputFile);
 	}
 }
-
-/*
-    try:
-        import program
-    except SyntaxError as e:
-        with open('/tmp/work/output/out.err', 'w', encoding='utf-8') as file:
-            (head, tail) = os.path.split(e.filename)
-            file.write('invalid syntax ({}, line {})'.format(tail, e.lineno - 3))
-        sys.exit(0)
-*/

@@ -19,12 +19,13 @@
 
 package org.pythia;
 
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.FileReader;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Arrays;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -80,10 +81,10 @@ public abstract class Runner
 		try
 		(
 			// Create the results file
-			Writer writer = Files.newBufferedWriter (Paths.get (dest + "/" + filename));
+			Writer writer = new BufferedWriter (new FileWriter (dest + "/" + filename));
 
 			// Read and run tests
-			Reader reader = Files.newBufferedReader (Paths.get (inputFile));
+			Reader reader = new BufferedReader (new FileReader (inputFile));
 			CSVParser csvParser = new CSVParser (reader, CSVFormat.DEFAULT
 				.withDelimiter(';')
 				.withQuote('"'));
