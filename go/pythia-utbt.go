@@ -126,10 +126,10 @@ func main() {
 func preprocess() error {
 	// Setup working directory and create directories for input/output data for unit tests.
 	os.RemoveAll(workDir)
-	if err := createDir(0755, workDir, workDir+"/input", studentDir); err != nil {
+	if err := createDir(0755, workDir, workDir+"/input"); err != nil {
 		return err
 	}
-	if err := createDir(0777, workDir+"/output"); err != nil {
+	if err := createDir(0777, studentDir, workDir+"/output"); err != nil {
 		return err
 	}
 
@@ -157,11 +157,13 @@ func preprocess() error {
 
 func createDir(perm os.FileMode, paths ...string) error {
 	for _, path := range paths {
-		if err := os.MkdirAll(path, perm); err != nil {
-			return err
-		}
-		if err := os.Chmod(path, perm); err != nil {
-			return err
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			if err := os.MkdirAll(path, perm); err != nil {
+				return err
+			}
+			if err := os.Chmod(path, perm); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -474,7 +476,7 @@ func executeSolution() error {
 
 	// Prepare working directory for solution execution.
 	os.RemoveAll(teacherDir)
-	if err := createDir(0700, teacherDir); err != nil {
+	if err := createDir(0777, teacherDir); err != nil {
 		return err
 	}
 
