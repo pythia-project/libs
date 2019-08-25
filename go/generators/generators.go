@@ -89,7 +89,7 @@ func (g FloatRandomGenerator) Generate() string {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// string
+// str
 
 type StringRandomGenerator struct {
 	MinLength int
@@ -121,11 +121,32 @@ func (g EnumRandomGenerator) Generate() string {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// array
+
+type ArrayRandomGenerator struct {
+	MinLength int
+	MaxLength int
+	Desc      string
+}
+
+// Generates a random value from an enumeration.
+func (g ArrayRandomGenerator) Generate() string {
+	length := randint(g.MinLength, g.MaxLength)
+	generator := buildGenerator(g.Desc)
+
+	data := make([]string, length)
+	for i := 0; i < length; i++ {
+		data[i] = generator.Generate()
+	}
+	return "[" + strings.Join(data, " ") + "]"
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Utility functions
 
 const (
-	intPattern   = `-{0,1}[1-9][0-9]*`
-	floatPattern = `-{0,1}[1-9][0-9]*(?:\.[0-9]*[1-9]){0,1}`
+	intPattern   = `0|-{0,1}[1-9][0-9]*`
+	floatPattern = `0|-{0,1}[1-9][0-9]*(?:\.[0-9]*[1-9]){0,1}`
 )
 
 func buildGenerator(desc string) RandomGenerator {
@@ -152,7 +173,7 @@ func buildGenerator(desc string) RandomGenerator {
 		return FloatRandomGenerator{min, max}
 	}
 
-	// str(min,max)
+	// str(minlen,maxlen)
 	regex, _ = regexp.Compile(fmt.Sprintf(`^str\((%[1]s),(%[1]s)\)$`, intPattern))
 	if matches := regex.FindStringSubmatch(desc); matches != nil {
 		minLength, _ := strconv.Atoi(matches[1])
@@ -164,6 +185,14 @@ func buildGenerator(desc string) RandomGenerator {
 	regex, _ = regexp.Compile(`^enum\((.+)\)$`)
 	if matches := regex.FindStringSubmatch(desc); matches != nil {
 		return EnumRandomGenerator{strings.Split(matches[1], ",")}
+	}
+
+	// array(minlen,maxlen)[desc]
+	regex, _ = regexp.Compile(fmt.Sprintf(`^array\((%[1]s),(%[1]s)\)\[(.+)\]$`, intPattern))
+	if matches := regex.FindStringSubmatch(desc); matches != nil {
+		minLength, _ := strconv.Atoi(matches[1])
+		maxLength, _ := strconv.Atoi(matches[2])
+		return ArrayRandomGenerator{minLength, maxLength, matches[3]}
 	}
 
 	return nil
