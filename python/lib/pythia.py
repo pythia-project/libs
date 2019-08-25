@@ -41,6 +41,17 @@ class Runner(ABC):
     def _parse(self, data, type):
         if type == 'int':
             return int(data)
+        if type == 'bool':
+            return bool(data)
+        if type == 'float':
+            return float(data)
+        if type in ['enum', 'str']:
+            return data
+        if type[:2] == '[]':
+            if type[2:] == 'int':
+                if data == '[]':
+                    return []
+                return [int(x) for x in data[1:len(data)-1].split(' ')]
         return None
 
     def run(self, dest, filename):
