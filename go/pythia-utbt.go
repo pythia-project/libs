@@ -326,6 +326,12 @@ func feedback() error {
 		return err
 	}
 
+	// Read and parse test configuration.
+	var config TestConfig
+	if err := readTestConfig("/task/config/test.json", &config); err != nil {
+		return err
+	}
+
 	// Check and handle standard error, if there is any.
 	content, err := ioutil.ReadFile(workDir + "/output/out.err")
 	if err == nil {
@@ -393,6 +399,13 @@ func feedback() error {
 					Input:    "(" + strings.Join(row, ",") + ")",
 					Expected: solutions[i],
 					Actual:   tokens[1],
+				}
+				if i < len(config.Predefined) && len(config.Predefined[i].Feedback) != 0 {
+					if msg, ok := config.Predefined[i].Feedback[tokens[1]]; ok {
+						feedback.Message = msg
+					} else if msg, ok := config.Predefined[i].Feedback["*"]; ok {
+						feedback.Message = msg
+					}
 				}
 			}
 		default:
