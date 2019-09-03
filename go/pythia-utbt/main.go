@@ -34,7 +34,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/pythia-project/libs/go/pythia-utbt/generators"
+	"github.com/pythia-project/libs/go/generators"
 )
 
 // TaskInput contains the inputs of the learner for the specified task id.
