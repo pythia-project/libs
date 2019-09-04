@@ -73,7 +73,7 @@ type Feedback struct {
 	Message string   `json:"message,omitempty"`
 	Example *Example `json:"example,omitempty"`
 	Stats   *Stats   `json:"stats,omitempty"`
-	Score   float32  `json:"score,omitempty"`
+	Score   float32  `json:"score"`
 }
 
 // Grading contains the result of the grading of the specified task id.
