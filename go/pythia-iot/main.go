@@ -298,6 +298,9 @@ func executeCommand(in string, command string, args ...string) (string, error) {
 		if stderr := stderr.Bytes(); len(stderr) > 0 {
 			return "error\n" + string(stderr), nil
 		}
+		if stdout := stdout.Bytes(); len(stdout) > 0 {
+			return "error\n" + string(stdout), nil
+		}
 		return "", err
 	}
 
