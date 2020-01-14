@@ -20,32 +20,18 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
-	"strings"
-	"syscall"
-)
 
-// ExecutionResult contains the result of the execution of a program.
-type ExecutionResult struct {
-	ReturnCode int    `json:"returncode"`
-	StdOut     string `json:"stdout"`
-	StdErr     string `json:"stderr"`
-}
-
-const (
-	workDir = "/tmp/work"
+	"github.com/pythia-project/libs/go/pythia/utils"
 )
 
 func main() {
-	var tokens []string
-	var execResult ExecutionResult
+	var execResult utils.ExecutionResult
 
 	// Parse arguments
 	fileName := flag.String("filename", "", "Program source code file name.")
@@ -54,95 +40,35 @@ func main() {
 	flag.Parse()
 
 	// Setup working directory
-	os.RemoveAll(workDir)
-	if err := os.MkdirAll(workDir, 0777); err != nil {
+	if err := utils.SetupWorkDir(); err != nil {
 		log.Fatalf("Error while creating working directory: %s.", err)
 	}
 
 	// Read input data
-	input, err := ioutil.ReadAll(os.Stdin)
+	input, err := utils.ReadStdIn()
 	if err != nil {
 		log.Fatalf("Error while reading stdin: %s.", err)
 	}
-	input = bytes.TrimRight(input, "\u0000")
 
 	// Create source code file
-	srcFile := fmt.Sprintf("%s/%s", workDir, *fileName)
+	srcFile := fmt.Sprintf("%s/%s", utils.WORKDIR, *fileName)
 	if err := ioutil.WriteFile(srcFile, input, 0774); err != nil {
 		log.Fatalf("Error while creating source code file: %s.", err)
 	}
 
-	// Compile program
+	// Compile and execute program
 	if *compileCmd != "" {
-		var stdout, stderr bytes.Buffer
-		tokens = strings.Split(*compileCmd, " ")
-		cmd := exec.Command(tokens[0], tokens[1:]...)
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			if exiterr, ok := err.(*exec.ExitError); ok {
-				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-					execResult.ReturnCode = status.ExitStatus()
-				}
-			}
-
-			if stderr := stderr.Bytes(); len(stderr) > 0 {
-				execResult.StdErr = string(stderr)
-				result, err := json.Marshal(execResult)
-				if err != nil {
-					log.Fatalf("Error while generating JSON output: %s.", err)
-				}
-				fmt.Println(string(result))
-				os.Exit(0)
-			}
-			log.Fatalf("Error while executing the compilation command: %s.", err)
-		}
+		execResult = utils.Execute(compileCmd)
+	}
+	if *executeCmd != "" && execResult.ReturnCode == 0 {
+		execResult = utils.Execute(executeCmd)
 	}
 
-	// Execute program
-	if *executeCmd != "" {
-		var stdout, stderr bytes.Buffer
-		tokens = strings.Split(*executeCmd, " ")
-		cmd := exec.Command(tokens[0], tokens[1:]...)
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		if err := cmd.Run(); err != nil {
-			if exiterr, ok := err.(*exec.ExitError); ok {
-				if status, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-					execResult.ReturnCode = status.ExitStatus()
-				}
-			}
-
-			if stderr := stderr.Bytes(); len(stderr) > 0 {
-				execResult.StdErr = string(stderr)
-				result, err := json.Marshal(execResult)
-				if err != nil {
-					log.Fatalf("Error while generating JSON output: %s.", err)
-				}
-				fmt.Println(string(result))
-				os.Exit(0)
-			}
-			if stdout := stdout.Bytes(); len(stdout) > 0 {
-				execResult.StdOut = string(stdout)
-				result, err := json.Marshal(execResult)
-				if err != nil {
-					log.Fatalf("Error while generating JSON output: %s.", err)
-				}
-				fmt.Println(string(result))
-				os.Exit(0)
-			}
-			log.Fatalf("Error while executing the execution command: %s.", err)
-		}
-
-		execResult.StdOut = string(stdout.Bytes())
-		result, err := json.Marshal(execResult)
-		if err != nil {
-			log.Fatalf("Error while generating JSON output: %s.", err)
-		}
-		fmt.Println(string(result))
+	// Generate JSON execution result
+	result, err := json.Marshal(execResult)
+	if err != nil {
+		log.Fatalf("Error while generating JSON output: %s.", err)
 	}
-
+	fmt.Println(string(result))
 	os.Exit(0)
 }
