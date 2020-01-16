@@ -1,8 +1,8 @@
 // Pythia utilities for input-output tasks
 // Author: Sébastien Combéfis <sebastien@combefis.be>
 //
-// Copyright (C) 2019, Computer Science and IT in Education ASBL
-// Copyright (C) 2019, ECAM Brussels Engineering School
+// Copyright (C) 2019-2020, Computer Science and IT in Education ASBL
+// Copyright (C) 2019-2020, ECAM Brussels Engineering School
 //
 // This program is free software: you can redistribute it and/or modify
 // under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -32,6 +33,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/pythia-project/libs/go/pythia/utils"
 )
 
 // TaskInput contains the inputs of the learner for the specified task id.
@@ -88,6 +91,28 @@ type Grading struct {
 	Feedback *Feedback `json:"feedback,omitempty"`
 }
 
+type TestConfiguration struct {
+	Tid     string   `json:"tid"`
+	Header  string   `json:"header,omitempty"`
+	Body    string   `json:"body"`
+	Footer  string   `json:"footer,omitempty"`
+	Inputs  []string `json:"inputs"`
+	Outputs []string `json:"outputs"`
+	Mirror  bool     `json:"mirror"`
+}
+
+type IOExecutionResult struct {
+	Tid     string   `json:"tid"`
+	Status  string   `json:"status"`
+	Message string   `json:"message,omitempty"`
+	Inputs  []string `json:"inputs,omitempty"`
+	Outputs struct {
+		Actual   []string `json:"actual,omitempty"`
+		Expected []string `json:"expected,omitempty"`
+	} `json:"outputs,omitempty"`
+	Valid []bool `json:"valid,omitempty"`
+}
+
 const (
 	skeletonDir = "/task/skeleton"
 
@@ -99,11 +124,12 @@ var fcts = map[string]func() error{
 	"preprocess": preprocess,
 	"execute":    execute,
 	"feedback":   feedback,
+	"test":       test,
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		log.Fatal("Subcommand is required (preprocess, execute or feedback).")
+		log.Fatal("Subcommand is required (preprocess, execute, feedback or test).")
 	}
 
 	// Find the function to execute for given subcommand.
@@ -175,52 +201,66 @@ func fillSkeletonFiles(src string, dst string, fields map[string]string) error {
 			return err
 		}
 
-		if !info.Mode().IsDir() {
-			// Get the destination file path.
-			dstDir, err := filepath.Rel(src, path)
-			if err != nil {
-				return err
-			}
-			dstFile := fmt.Sprintf("%s/%s", dst, dstDir)
-
-			// Create destination directories.
-			if err := createDir(0755, filepath.Dir(dstFile)); err != nil {
-				return err
-			}
-
-			// Read the source file.
-			content, err := ioutil.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			fileContent := string(content)
-
-			// Find placeholders and replace them with corresponding input.
-			for key, value := range fields {
-				regex, _ := regexp.Compile("@([^@]*)@" + key + "@([^@]*)@")
-				matches := regex.FindAllStringSubmatch(fileContent, -1)
-				for _, match := range matches {
-					lines := strings.Split(value, "\n")
-					var rep strings.Builder
-					for _, line := range lines {
-						rep.WriteString(match[1] + line + match[2] + "\n")
-					}
-					fileContent = strings.ReplaceAll(fileContent, "@"+match[1]+"@"+key+"@"+match[2]+"@", rep.String())
-				}
-			}
-
-			// Write the destination file.
-			if err := ioutil.WriteFile(dstFile, []byte(fileContent), 0774); err != nil {
-				return err
-			}
-
-			// Set file permission.
-			if err := os.Chmod(dstFile, 0644); err != nil {
-				return err
-			}
+		dstFile, err := getDestinationPath(src, dst, path)
+		if err != nil {
+			return err
 		}
+
+		if !info.Mode().IsDir() {
+			return fillSkeletonFile(path, dstFile, fields)
+		}
+
 		return nil
 	})
+}
+
+// Get the destination file path and create destination directory if needed.
+func getDestinationPath(src string, dst string, path string) (string, error) {
+	dstDir, err := filepath.Rel(src, path)
+	if err != nil {
+		return "", err
+	}
+	dstFile := fmt.Sprintf("%s/%s", dst, dstDir)
+
+	if err := createDir(0755, filepath.Dir(dstFile)); err != nil {
+		return "", err
+	}
+	return dstFile, nil
+}
+
+func fillSkeletonFile(srcFile string, dstFile string, fields map[string]string) error {
+	// Read the source file.
+	content, err := ioutil.ReadFile(srcFile)
+	if err != nil {
+		return err
+	}
+	fileContent := string(content)
+
+	// Find placeholders and replace them with corresponding input.
+	for key, value := range fields {
+		regex, _ := regexp.Compile("@([^@]*)@" + key + "@([^@]*)@")
+		matches := regex.FindAllStringSubmatch(fileContent, -1)
+		for _, match := range matches {
+			lines := strings.Split(value, "\n")
+			var rep strings.Builder
+			for _, line := range lines {
+				rep.WriteString(match[1] + line + match[2] + "\n")
+			}
+			fileContent = strings.ReplaceAll(fileContent, "@"+match[1]+"@"+key+"@"+match[2]+"@", rep.String())
+		}
+	}
+
+	// Write the destination file.
+	if err := ioutil.WriteFile(dstFile, []byte(fileContent), 0774); err != nil {
+		return err
+	}
+
+	// Set file permission.
+	if err := os.Chmod(dstFile, 0644); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func saveTaskId(tid string) error {
@@ -331,7 +371,7 @@ func feedback() error {
 		return err
 	}
 
-	// Generate the feedback
+	// Generate the feedback.
 	var feedback Feedback
 	var stats Stats
 	stats.Succeeded = 0
@@ -359,7 +399,7 @@ func feedback() error {
 		}
 	}
 
-	// Generate feedback result
+	// Generate feedback result.
 	feedback.Stats = &stats
 	feedback.Score = float32(stats.Succeeded) / float32(stats.Total)
 	grading.Feedback = &feedback
@@ -388,4 +428,114 @@ func readTestOutput(path string, output *TestOutput) error {
 	}
 
 	return json.Unmarshal(content, &output)
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Test
+
+func test() error {
+	var testResult IOExecutionResult
+
+	// Parse arguments.
+	testCmd := flag.NewFlagSet("test", flag.ExitOnError)
+	fileName := testCmd.String("filename", "", "Program source code file name.")
+	templatePath := testCmd.String("template", "", "Template source code file path.")
+	compileCmd := testCmd.String("compile", "", "Command to compile the program.")
+	executeCmd := testCmd.String("execute", "", "Command to execute the program.")
+	testCmd.Parse(os.Args[2:])
+
+	// Setup working directory.
+	if err := utils.SetupWorkDir(); err != nil {
+		log.Fatalf("Error while creating working directory: %s.", err)
+	}
+
+	// Read input data.
+	input, err := utils.ReadStdIn()
+	if err != nil {
+		log.Fatalf("Error while reading stdin: %s.", err)
+	}
+
+	var testConfig TestConfiguration
+	if err := json.Unmarshal(input, &testConfig); err != nil {
+		return err
+	}
+
+	// Fill skeleton files with learner's inputs.
+	*fileName = fmt.Sprintf("%s/%s", utils.WORKDIR, *fileName)
+	fields := map[string]string{
+		"header": testConfig.Header,
+		"body":   testConfig.Body,
+		"footer": testConfig.Footer,
+	}
+	if err := fillSkeletonFile(*templatePath, *fileName, fields); err != nil {
+		log.Fatalf("Error while creating source code file: %s.", err)
+	}
+
+	// Execute program for each test case.
+	n := len(testConfig.Inputs)
+	results := make([]bool, n)
+	outputs := make([]string, n)
+
+	for i := 0; i < n; i++ {
+		var execResult utils.ExecutionResult
+
+		// Compile and execute program.
+		if *compileCmd != "" {
+			execResult = utils.Execute(compileCmd, "")
+		}
+		if *executeCmd != "" && execResult.ReturnCode == 0 {
+			execResult = utils.Execute(executeCmd, testConfig.Inputs[i])
+		}
+
+		// Generate error output.
+		if execResult.ReturnCode != 0 {
+			testResult.Tid = testConfig.Tid
+			testResult.Status = "error"
+			testResult.Message = execResult.StdErr
+
+			result, err := json.Marshal(testResult)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(result))
+
+			return nil
+		}
+
+		// Check result.
+		outputs[i] = execResult.StdOut
+		results[i] = outputs[i] == testConfig.Outputs[i]
+	}
+
+	// Generate output.
+	success := nTrue(results)
+	testResult.Tid = testConfig.Tid
+	testResult.Status = "success"
+	if success != n {
+		testResult.Status = "failed"
+	}
+	testResult.Outputs.Actual = outputs
+	testResult.Valid = results
+	if testConfig.Mirror {
+		testResult.Inputs = testConfig.Inputs
+		testResult.Outputs.Expected = testConfig.Outputs
+	}
+
+	result, err := json.Marshal(testResult)
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(result))
+
+	return nil
+}
+
+func nTrue(b []bool) int {
+	n := 0
+	for _, v := range b {
+		if v {
+			n++
+		}
+	}
+	return n
 }

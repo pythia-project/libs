@@ -58,10 +58,10 @@ func main() {
 
 	// Compile and execute program
 	if *compileCmd != "" {
-		execResult = utils.Execute(compileCmd)
+		execResult = utils.Execute(compileCmd, "")
 	}
 	if *executeCmd != "" && execResult.ReturnCode == 0 {
-		execResult = utils.Execute(executeCmd)
+		execResult = utils.Execute(executeCmd, "")
 	}
 
 	// Generate JSON execution result

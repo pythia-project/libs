@@ -67,15 +67,18 @@ func getExitStatus(err error) int {
 }
 
 // Execute a command and retrieve execution results.
-func Execute(command *string) ExecutionResult {
+func Execute(command *string, input string) ExecutionResult {
 	var execResult ExecutionResult
 	var stdout, stderr bytes.Buffer
 
-	// Build the command to run
+	// Build the command to run.
 	tokens := strings.Split(*command, " ")
 	cmd := exec.Command(tokens[0], tokens[1:]...)
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if input != "" {
+		cmd.Stdin = bytes.NewBuffer([]byte(input))
+	}
 
 	// Run the command and retrieve execution results.
 	if err := cmd.Run(); err != nil {
