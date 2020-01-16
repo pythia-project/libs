@@ -33,30 +33,30 @@ import (
 func main() {
 	var execResult utils.ExecutionResult
 
-	// Parse arguments
+	// Parse arguments.
 	fileName := flag.String("filename", "", "Program source code file name.")
 	compileCmd := flag.String("compile", "", "Command to compile the program.")
 	executeCmd := flag.String("execute", "", "Command to execute the program.")
 	flag.Parse()
 
-	// Setup working directory
+	// Setup working directory.
 	if err := utils.SetupWorkDir(); err != nil {
 		log.Fatalf("Error while creating working directory: %s.", err)
 	}
 
-	// Read input data
+	// Read input data.
 	input, err := utils.ReadStdIn()
 	if err != nil {
 		log.Fatalf("Error while reading stdin: %s.", err)
 	}
 
-	// Create source code file
+	// Create source code file.
 	srcFile := fmt.Sprintf("%s/%s", utils.WORKDIR, *fileName)
 	if err := ioutil.WriteFile(srcFile, input, 0774); err != nil {
 		log.Fatalf("Error while creating source code file: %s.", err)
 	}
 
-	// Compile and execute program
+	// Compile and execute program.
 	if *compileCmd != "" {
 		execResult = utils.Execute(compileCmd, "")
 	}
@@ -64,7 +64,7 @@ func main() {
 		execResult = utils.Execute(executeCmd, "")
 	}
 
-	// Generate JSON execution result
+	// Generate JSON execution result.
 	result, err := json.Marshal(execResult)
 	if err != nil {
 		log.Fatalf("Error while generating JSON output: %s.", err)
